@@ -1,93 +1,19 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component } from '@angular/core';
 import * as root from '../compiled.pb';
 import { Parser } from './parser';
-import { SolaceService } from './solace.service';
+import { Injectable } from '@angular/core';
 
 const ems = root["gng"].core.pb.ems;
-console.log(root);
 
-const SESSION_PROPERITY = {
-  requestTimeout: 10000,
-  operationTimeout: 30000,
-  maxWebPayload: 5242880, // default 1048576 (1MB), change to 5MB
-  sendBufferMaxSize: 3145728, // default 65536 (64KB), change to 3MB
-};
 declare var solace: any;
 
-
-@Component({
-  selector: 'app-root',
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.scss'],
-  changeDetection: ChangeDetectionStrategy.OnPush
+@Injectable({
+  providedIn: 'root'
 })
-export class AppComponent {
-  title = 'angular-wasm';
+export class Api {
   session: any;
   subscribed = false;
-  solaceService: SolaceService;
-  instrument: any;
-  cdRef: ChangeDetectorRef;
-  worker: Worker;
 
-  constructor(solaceService: SolaceService, cdRef: ChangeDetectorRef) {
-    this.solaceService = solaceService;
-    this.cdRef = cdRef;
-  }
-
-
-  async ngOnInit() {
-    this.initSolace();
-
-    setTimeout(this.initWasmWebworker.bind(this), 0);
-
-    setInterval(() => {
-      this.cdRef.detectChanges();
-    }, 200);
-  }
-
-  initWasmWebworker() {
-    const rust = import('../../wasm/pkg');
-
-    if (typeof Worker !== 'undefined') {
-      // Create a new
-      this.worker = new Worker(new URL('./app.worker', import.meta.url));
-      this.worker.onmessage = ({ data }) => {
-        // alert(`page got message: ${data}`);
-        this.instrument = data;
-      };
-      // worker.postMessage(10);
-    } else {
-      // Web Workers are not supported in this environment.
-      // You should add a fallback so that your program still executes correctly.
-      console.error("Web worker not supported in this browser!!!")
-    }
-  }
-
-  private processMessage(message) {
-    return new Promise((resolve, reject)=> {
-      const response: any = Parser.decodeBinaryAttachmentToPb(message.getBinaryAttachment(), ems.Fill);
-      console.log("Response", response);
-      // this.instrument = `${response.fillId} + ${response.sourceAppId}`;
-      resolve(response);
-    });
-  }
-
-  private async messageRxCb(session: any, message: any) {
-
-    console.log('========Message received=============');
-    
-    // console.log("==========No protobuf==============")
-    // console.log('Message', message);
-
-    console.log("================Using web worker to delegate encode/decode (Wasm/dedicated_svc poc)==============");
-    await this.worker.postMessage({message: message.getBinaryAttachment()});
-    
-    // console.log("================Normal Mode==============");
-    // await this.processMessage(message).then((response:any) => {this.instrument = `${response.fillId} + ${response.sourceAppId}`});
-  }
-
-  initSolace() {
+  constructor() {
     var factoryProps = new solace.SolclientFactoryProperties();
     factoryProps.profile = solace.SolclientFactoryProfiles.version10;
     solace.SolclientFactory.init(factoryProps);
@@ -120,7 +46,9 @@ export class AppComponent {
       new solace.MessageRxCBInfo(this.messageRxCb.bind(this))
     );
     this.session = session;
+  }
 
+  ngOnInit() {
     this.session.on(solace.SessionEventCode.UP_NOTICE, function (sessionEvent: any) {
       console.log('=== Successfully connected and ready to subscribe. ===');
     });
@@ -140,33 +68,34 @@ export class AppComponent {
       console.log('Cannot subscribe to topic: ' + sessionEvent.correlationKey);
     });
     this.session.on(solace.SessionEventCode.SUBSCRIPTION_OK, (sessionEvent: any) => {
-      // if (this.subscribed) {
-      //   this.subscribed = false;
-      //   console.log('Successfully unsubscribed from topic: ' + sessionEvent.correlationKey);
-      // } else {
-      //   this.subscribed = true;
-      //   console.log('Successfully subscribed to topic: ' + sessionEvent.correlationKey);
-      //   console.log('=== Ready to receive messages. ===');
-      // }
+      if (this.subscribed) {
+        this.subscribed = false;
+        console.log('Successfully unsubscribed from topic: ' + sessionEvent.correlationKey);
+      } else {
+        this.subscribed = true;
+        console.log('Successfully subscribed to topic: ' + sessionEvent.correlationKey);
+        console.log('=== Ready to receive messages. ===');
+      }
     });
-    // define message event listener
-    // this.session.on(solace.SessionEventCode.MESSAGE, function (message: any) {
-    //   console.log('Received message: "' + message.getBinaryAttachment() + '", details:\n' +
-    //       message.dump());
-    // });
 
     this.connectToSolace();
     setTimeout(this.subscribe.bind(this, "test_ems/v0/pb/pub/SG/csqstage-ems04.grass.corp/fill_bomber_tool/fill"), 5000);
-    // setTimeout(this.subscribe.bind(this, "test_ems/v0/pb/pub/SG/shivraj_testing/fill_bomber_tool/fill"), 5000);
   }
 
-  connectToSolace() {
+  private messageRxCb(session: any, message: any) {
+    // console.log('========Message received', message.getBinaryAttachment());
+    const response: any = Parser.decodeBinaryAttachmentToPb(message, ems.Fill);
+    console.log("Response", response);
+    //RespMissingFill
+  }
+
+  private connectToSolace() {
     try {
       this.session.connect();
     } catch (error) {
       console.error(error);
     }
-  };
+  }
 
   async subscribe(topic: string) {
     if (this.session.session !== null) {
@@ -192,4 +121,5 @@ export class AppComponent {
       console.error('Cannot subscribe because not connected to Solace message router.');
     }
   }
+
 }

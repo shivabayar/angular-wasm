@@ -60,7 +60,8 @@ export class Parser {
   // see https://github.com/protobufjs/protobuf.js
   static decodeBinaryAttachmentToPb(message : any, pbType : any) {
     try {
-      const attachment = message.getBinaryAttachment() || '';
+      // const attachment = message.getBinaryAttachment() || '';
+      const attachment = message || '';
       const bytes = this.byteArrayFromBinaryAttachment(attachment);
       return pbType.toObject(pbType.decode(bytes), {
         longs: String,
