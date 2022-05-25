@@ -22,7 +22,8 @@
     "tslib": "^2.3.0",
     "zone.js": "~0.11.4",
     "solclientjs": "10.9.0",
-    "protobufjs": "latest"
+    "protobufjs": "latest",
+    "observable-webworker": "latest"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "~13.0.2",

@@ -2,9 +2,13 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component } from '@angular/
 import * as root from '../compiled.pb';
 import { Parser } from './parser';
 import { SolaceService } from './solace.service';
+import { Observable, of, Subject } from 'rxjs';
+import { fromWorker, fromWorkerPool } from 'observable-webworker';
 
 const ems = root["gng"].core.pb.ems;
 console.log(root);
+
+//Wasm
 
 const SESSION_PROPERITY = {
   requestTimeout: 10000,
@@ -29,6 +33,8 @@ export class AppComponent {
   instrument: any;
   cdRef: ChangeDetectorRef;
   worker: Worker;
+  count = 0;
+  obsWoker: any;
 
   constructor(solaceService: SolaceService, cdRef: ChangeDetectorRef) {
     this.solaceService = solaceService;
@@ -40,10 +46,15 @@ export class AppComponent {
     this.initSolace();
 
     setTimeout(this.initWasmWebworker.bind(this), 0);
+    setTimeout(this.initObservableWebWorker.bind(this), 0);
 
     setInterval(() => {
       this.cdRef.detectChanges();
     }, 200);
+  }
+
+  initObservableWebWorker() {
+    this.obsWoker = new Worker(new URL('./obs-worker.worker', import.meta.url));
   }
 
   initWasmWebworker() {
@@ -75,14 +86,31 @@ export class AppComponent {
 
   private async messageRxCb(session: any, message: any) {
 
-    console.log('========Message received=============');
+    // console.log('========Message received=============');
     
-    // console.log("==========No protobuf==============")
+    // console.log("==========No protobuf==============");
     // console.log('Message', message);
+    // this.instrument = message._destination._bytes;
 
-    console.log("================Using web worker to delegate encode/decode (Wasm/dedicated_svc poc)==============");
-    await this.worker.postMessage({message: message.getBinaryAttachment()});
-    
+    // console.log("================Using web worker to delegate encode/decode (Wasm/dedicated_svc poc)==============");
+    // console.log(new Date());
+    // const objData = {
+    //   str: "string",
+    //   ab: new ArrayBuffer(100),
+    //   i8: new Int8Array(200)
+    // };
+    // this.worker.postMessage(objData, [objData.ab, objData.i8.buffer]);
+    // with web worker
+    // await this.worker.postMessage({message: message.getBinaryAttachment()});
+
+    //with obserable webworker
+    const input$: Observable<any> = of({message: message.getBinaryAttachment()});
+
+    fromWorkerPool<string, string>(() => this.obsWoker, input$)
+      .subscribe(data => {
+        this.instrument = data;
+      });
+
     // console.log("================Normal Mode==============");
     // await this.processMessage(message).then((response:any) => {this.instrument = `${response.fillId} + ${response.sourceAppId}`});
   }
@@ -191,5 +219,9 @@ export class AppComponent {
     } else {
       console.error('Cannot subscribe because not connected to Solace message router.');
     }
+  }
+
+  increment() {
+    this.count++;
   }
 }
